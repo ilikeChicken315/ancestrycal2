@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Family Tree with Traits, Ancestry & Hybrid Names</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+body { font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }
+h1 { text-align: center; }
+.box { background: white; padding: 20px; border-radius: 10px; margin-bottom: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);}
+input, select { margin: 5px; padding: 5px; }
+button { padding: 8px 15px; margin: 5px; cursor: pointer; }
+#treeContainer { position: relative; width: 100%; min-height: 500px; border: 1px solid #ccc; background: #fff; overflow: auto; }
+.character { position: absolute; width: 180px; padding: 10px; border-radius: 10px; background: #e8f0ff; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.1); cursor: grab;}
+svg { position: absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; }
+</style>
+</head>
+<body>
+
+<h1>Family Tree with Traits, Ancestry & Hybrid Names</h1>
+
+<div class="box">
+  <h3>Step 1 — Define Ancestries & Traits</h3>
+  <input id="ancestryName" placeholder="Add Ancestry (e.g. Neanderthal)">
+  <button onclick="addAncestry()">Add Ancestry</button>
+  <ul id="ancestryList"></ul>
+
+  <hr style="margin:15px 0;">
+
+  <input id="traitName" placeholder="Add Trait (e.g. Strength)">
+  <button onclick="addTrait()">Add Trait</button>
+  <ul id="traitList"></ul>
+</div>
+
+<div class="box">
+  <h3>Step 2 — Add Characters</h3>
+  <input id="charName" placeholder="Character Name">
+  <select id="parentA"><option value="">Parent A (optional)</option></select>
+  <select id="parentB"><option value="">Parent B (optional)</option></select>
+  <button onclick="addCharacter()">Add Character</button>
+  <ul id="charList"></ul>
+</div>
+
+<div id="treeContainer">
+  <svg id="treeLines"></svg>
+</div>
+
+<script>
+let ancestries = [];
+let traits = [];
+let characters = {};
+
+function addAncestry(){
+  const name = document.getElementById("ancestryName").value.trim();
+  if(!name || ancestries.includes(name)) return;
+  ancestries.push(name);
+  document.getElementById("ancestryName").value="";
+  document.getElementById("ancestryList").innerHTML = ancestries.map(a=>`<li>${a}</li>`).join('');
+}
+
+function addTrait(){
+  const name = document.getElementById("traitName").value.trim();
+  if(!name || traits.includes(name)) return;
+  traits.push(name);
+  document.getElementById("traitName").value="";
+  document.getElementById("traitList").innerHTML = traits.map(t=>`<li>${t}</li>`).join('');
+}
+
+function updateParentOptions(){
+  const selA = document.getElementById("parentA");
+  const selB = document.getElementById("parentB");
+  selA.innerHTML = `<option value="">Parent A (optional)</option>` + Object.keys(characters).map(c=>`<option value="${c}">${c}</option>`).join('');
+  selB.innerHTML = `<option value="">Parent B (optional)</option>` + Object.keys(characters).map(c=>`<option value="${c}">${c}</option>`).join('');
+}
+
+function addCharacter(){
+  const nameInput = document.getElementById("charName").value.trim();
+  if(!nameInput) return;
+  const parentA = document.getElementById("parentA").value;
+  const parentB = document.getElementById("parentB").value;
+
+  let ancestry = {};
+  ancestries.forEach(a=>{
+    if(!parentA && !parentB){
+      const val = prompt(`Enter percentage of ${a} for ${nameInput} (0-100, blank=0)`);
+      ancestry[a] = Math.min(Math.max(parseFloat(val)||0,0),100);
+    } else {
+      const valA = parentA ? characters[parentA].ancestry[a] || 0 : 0;
+      const valB = parentB ? characters[parentB].ancestry[a] || 0 : 0;
+      ancestry[a] = (valA + valB)/2;
+    }
+  });
+
+  let charTraits = {};
+  traits.forEach(tr=>{
+    if(!parentA && !parentB){
+      const val = prompt(`Enter value of ${tr} for ${nameInput} (0-100)`);
+      charTraits[tr] = Math.min(Math.max(parseFloat(val)||0,0),100);
+    } else {
+      const valA = parentA ? characters[parentA].traits[tr] || 0 : 0;
+      const valB = parentB ? characters[parentB].traits[tr] || 0 : 0;
+      charTraits[tr] = Math.random()*(Math.max(valA,valB)-Math.min(valA,valB))+Math.min(valA,valB);
+    }
+  });
+
+  let finalName = nameInput;
+  if(parentA && parentB){
+    const sumTraits = p => Object.values(characters[p].traits).reduce((a,b)=>a+b,0);
+    const sumA = sumTraits(parentA);
+    const sumB = sumTraits(parentB);
+    const dominantParent = sumA >= sumB ? parentA : parentB;
+    finalName = `Demi ${dominantParent}`;
+  }
+
+  characters[finalName] = {name: finalName, parents:[parentA,parentB], ancestry, traits:charTraits, generation:0, x:0, y:0};
+
+  document.getElementById("charName").value="";
+  updateParentOptions();
+  calculateGenerations();
+  renderTree();
+}
+
+function calculateGenerations(){
+  function gen(name){
+    const c = characters[name];
+    if(c.parents[0] || c.parents[1]){
+      const g1 = c.parents[0]?gen(c.parents[0])+1:0;
+      const g2 = c.parents[1]?gen(c.parents[1])+1:0;
+      c.generation = Math.max(g1,g2);
+    } else c.generation=0;
+    return c.generation;
+  }
+  Object.keys(characters).forEach(gen);
+}
+
+function renderTree(){
+  const container = document.getElementById("treeContainer");
+  container.querySelectorAll(".character").forEach(e=>e.remove());
+  const svg = document.getElementById("treeLines");
+  while(svg.firstChild) svg.removeChild(svg.firstChild);
+
+  const gens = {};
+  Object.values(characters).forEach(c=>{
+    if(!gens[c.generation]) gens[c.generation]=[];
+    gens[c.generation].push(c);
+  });
+
+  const levelHeight = 200;
+  Object.keys(gens).forEach(g=>{
+    const nodes = gens[g];
+    let xPos = 50;
+    nodes.forEach((c,i)=>{
+      if(!c.x) c.x = xPos;
+      c.y = 50 + g*levelHeight;
+      xPos += 220;
+    });
+  });
+
+  Object.values(characters).forEach(c=>{
+    c.parents.forEach(p=>{
+      if(p){
+        const parent = characters[p];
+        const line = document.createElementNS("http://www.w3.org/2000/svg","line");
+        line.setAttribute("x1",parent.x+75);
+        line.setAttribute("y1",parent.y+150);
+        line.setAttribute("x2",c.x+75);
+        line.setAttribute("y2",c.y);
+        line.setAttribute("stroke","#888");
+        line.setAttribute("stroke-width","2");
+        svg.appendChild(line);
+      }
+    });
+  });
+
+  Object.values(characters).forEach(c=>{
+    const div = document.createElement("div");
+    div.className="character";
+    div.style.left=c.x+"px";
+    div.style.top=c.y+"px";
+    let html = `<strong>${c.name}</strong><br>Parents: ${c.parents.filter(p=>p).join(", ")}<br>`;
+    html += ancestries.map(a=>`${a}: ${c.ancestry[a].toFixed(1)}%`).join("<br>")+"<br>";
+    html += traits.map(t=>`${t}: ${c.traits[t].toFixed(1)}`).join("<br>")+"<br>";
+    html += `<canvas id="chart_${c.name}" width="150" height="150"></canvas>`;
+    div.innerHTML=html;
+    container.appendChild(div);
+
+    new Chart(document.getElementById(`chart_${c.name}`),{
+      type:'pie',
+      data:{labels:ancestries,datasets:[{data:ancestries.map(a=>c.ancestry[a]),backgroundColor:ancestries.map(_=>`hsl(${Math.random()*360},70%,60%)`)}]},
+      options:{responsive:false,plugins:{legend:{position:'bottom'}}}
+    });
+
+    makeDraggable(div,c);
+  });
+}
+
+function makeDraggable(el, char){
+  let offsetX=0, offsetY=0, dragging=false;
+
+  el.addEventListener("mousedown", e=>{
+    dragging = true;
+    offsetX = e.clientX - el.offsetLeft;
+    offsetY = e.clientY - el.offsetTop;
+    el.style.zIndex=1000;
+    el.style.cursor="grabbing";
+  });
+
+  document.addEventListener("mousemove", e=>{
+    if(dragging){
+      char.x = e.clientX - offsetX;
+      char.y = e.clientY - offsetY;
+      el.style.left = char.x+"px";
+      el.style.top = char.y+"px";
+      updateLines();
+    }
+  });
+
+  document.addEventListener("mouseup", e=>{
+    dragging = false;
+    el.style.zIndex=1;
+    el.style.cursor="grab";
+  });
+}
+
+function updateLines(){
+  const svg = document.getElementById("treeLines");
+  while(svg.firstChild) svg.removeChild(svg.firstChild);
+  Object.values(characters).forEach(c=>{
+    c.parents.forEach(p=>{
+      if(p){
+        const parent = characters[p];
+        const line = document.createElementNS("http://www.w3.org/2000/svg","line");
+        line.setAttribute("x1",parent.x+75);
+        line.setAttribute("y1",parent.y+150);
+        line.setAttribute("x2",c.x+75);
+        line.setAttribute("y2",c.y);
+        line.setAttribute("stroke","#888");
+        line.setAttribute("stroke-width","2");
+        svg.appendChild(line);
+      }
+    });
+  });
+}
+</script>
+
+</body>
+</html>
+
+
+
